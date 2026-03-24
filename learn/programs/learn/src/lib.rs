@@ -7,7 +7,7 @@ pub mod learn {
     use super::*;
 
     pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
-        msg!("Greetings  test from 4 1111: {:?}", ctx.program_id);
+        msg!("Greetings  test from 42131 1111: {:?}", ctx.program_id);
         Ok(())
     }
 }
