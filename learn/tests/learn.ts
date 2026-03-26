@@ -69,6 +69,7 @@ describe("learn", () => {
         console.log(`${account} has  ${balance / anchor.web3.LAMPORTS_PER_SOL} SOL `);
     }
 
+    /*
     it("Transmit SOL", async () => {
         // generate a new wallet
         const recipient = anchor.web3.Keypair.generate();
@@ -82,6 +83,31 @@ describe("learn", () => {
 
     })
 
+     */
+
+    it("Test send Sol to more account",async ()=>{
+        const recipient1 = anchor.web3.Keypair.generate();
+        const recipient2 = anchor.web3.Keypair.generate();
+        const recipient3 = anchor.web3.Keypair.generate();
+        const recipient4 = anchor.web3.Keypair.generate();
+        await getBalance(recipient1.publicKey);
+        await getBalance(recipient2.publicKey);
+        await getBalance(recipient3.publicKey);
+        await getBalance(recipient4.publicKey);
+
+        const accountMeta1 = {pubkey:recipient1.publicKey,isWritable:true,isSigner: false};
+        const accountMeta2 = {pubkey:recipient2.publicKey,isWritable:true,isSigner: false};
+        const accountMeta3 = {pubkey:recipient3.publicKey,isWritable:true,isSigner: false};
+        const accountMeta4 = {pubkey:recipient4.publicKey,isWritable:true,isSigner: false};
+
+        let amount = new anchor.BN(4*anchor.web3.LAMPORTS_PER_SOL);
+        await program.methods.sendMore(amount).remainingAccounts([accountMeta1,accountMeta2,accountMeta3,accountMeta4]).rpc();
+        await getBalance(recipient1.publicKey);
+        await getBalance(recipient2.publicKey);
+        await getBalance(recipient3.publicKey);
+        await getBalance(recipient4.publicKey);
+
+    })
 });
 // solana-test-validator
 // anchor test --skip-local-validator

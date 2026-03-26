@@ -32,6 +32,8 @@ pub mod learn {
     }
 
      */
+
+    /*
     pub fn send_sol(ctx: Context<SendSol>,amount:u64)->Result<()>{
         //   Solana 上每个程序只能执行自己的逻辑。你的 learn 程序想转 SOL，
         //  但转账是 System Program 的功能，所以需要"跨程序调用"去调用它。CpiContext
@@ -52,18 +54,64 @@ pub mod learn {
         Ok(())
 
     }
+
+     */
+
+
+    pub fn send_more<'a,'b,'c,'info>(
+        ctx: Context<'a,'b,'c,'info,SplitSol<'info>>,amount:u64)->Result<()>{
+        let amount_each_gets = amount/ctx.remaining_accounts.len() as u64;
+        let system_program = &ctx.accounts.system_program;
+        // 注意关键字 `remaining_accounts`
+        for recipient in ctx.remaining_accounts{
+            let cpi_accounts = system_program::Transfer{
+                from: ctx.accounts.signer.to_account_info(),
+                to: recipient.to_account_info(),
+            };
+            let cpi_program = system_program.to_account_info();
+            let cpi_context = CpiContext::new(cpi_program, cpi_accounts);
+
+            system_program::transfer(cpi_context,amount_each_gets)?;
+            // if !res.is_ok(){
+            //     return err!(Errors::TransferFailed)
+            // }
+
+        };
+        Ok(())
+    }
+
+
 }
 
 #[derive(Accounts)]
 pub struct Initialize  {
 }
 
+#[derive(Accounts)]
+pub struct SplitSol<'info>{
+    #[account(mut)]
+    signer: Signer<'info>,
+    system_program: Program<'info, System>,
+}
 
 #[derive(Accounts)]
 pub struct SendSol <'info> {
+    /// CHECK: we do not read or write the data of this account
+    #[account(mut)]
+    recipient1: UncheckedAccount<'info>,
+
+    /// CHECK: we do not read or write the data of this account
+    #[account(mut)]
+    recipient2: UncheckedAccount<'info>,
+
+    /// CHECK: we do not read or write the data of this account
+    #[account(mut)]
+    recipient3: UncheckedAccount<'info>,
+
     /// CHECK: 不读取或者写入这个账户
     #[account(mut)]
-    recipient:UncheckedAccount<'info>,
+    recipient4:UncheckedAccount<'info>,
+
     system_program: Program<'info, System>,
 
     #[account(mut)]
