@@ -85,6 +85,7 @@ describe("learn", () => {
 
      */
 
+    /*
     it("Test send Sol to more account",async ()=>{
         const recipient1 = anchor.web3.Keypair.generate();
         const recipient2 = anchor.web3.Keypair.generate();
@@ -108,6 +109,54 @@ describe("learn", () => {
         await getBalance(recipient4.publicKey);
 
     })
+     */
+
+
+
+
+    it("test more signer", async () => {
+        const alice = anchor.web3.Keypair.generate();
+        const bob = anchor.web3.Keypair.generate();
+
+        const airdrop_alice_tx = await anchor.getProvider().connection.requestAirdrop(alice.publicKey,1*anchor.web3.LAMPORTS_PER_SOL);
+        await confirmTransaction(airdrop_alice_tx);
+        const airdrop_bob_tx = await anchor.getProvider().connection.requestAirdrop(bob.publicKey,1*anchor.web3.LAMPORTS_PER_SOL)
+        await confirmTransaction(airdrop_alice_tx);
+
+
+        let seed = [];
+        const [myStorage, _bump] = anchor.web3.PublicKey.findProgramAddressSync(seed, program.programId);
+
+        // 初始化 Alice 的账户
+        await program.methods.moreSigner().accounts({
+            myStorage: myStorage ,fren:alice.publicKey // ** 这必须明确指定 **
+        }).signers([alice]).rpc();
+
+        //  Bob 写入账户
+        await program.methods.updateValue(new anchor.BN(3)).accounts({
+            myStorage:myStorage,
+            fren:bob.publicKey
+        }).signers([bob]).rpc();
+
+        let value =await program.account.myStorage.fetch(myStorage);
+        console.log(`存储的值为 ${value.x}`);
+    });
+
 });
 // solana-test-validator
 // anchor test --skip-local-validator
+// 此函数向一个地址空投SOL
+async function airdropSol(publickey, amount) {
+    let airdropTx = await anchor.getProvider().connection.requestAirdrop(publickey, amount);
+    await confirmTransaction(airdropTx);
+}
+
+async function confirmTransaction(tx) {
+    const latestBlockHash = await anchor.getProvider().connection.getLatestBlockhash();
+    await anchor.getProvider().connection.confirmTransaction(
+        {
+            blockhash: latestBlockHash.blockhash,
+            lastValidBlockHeight: latestBlockHash.lastValidBlockHeight,
+            signature: tx,
+        });
+}

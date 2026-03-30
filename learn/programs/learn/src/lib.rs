@@ -58,6 +58,8 @@ pub mod learn {
      */
 
 
+
+    /*
     pub fn send_more<'a,'b,'c,'info>(
         ctx: Context<'a,'b,'c,'info,SplitSol<'info>>,amount:u64)->Result<()>{
         let amount_each_gets = amount/ctx.remaining_accounts.len() as u64;
@@ -81,12 +83,47 @@ pub mod learn {
     }
 
 
+     */
+
+
+    pub fn more_signer(_ctx: Context<Initialize>)->Result<()>{
+        Ok(())
+    }
+
+    pub fn update_value(ctx: Context<UpdateValue>,new_value:u64)->Result<()>{
+        ctx.accounts.my_storage.x=new_value;
+        Ok(())
+    }
+
+
+
 }
 
 #[derive(Accounts)]
-pub struct Initialize  {
+pub struct Initialize<'info>  {
+    #[account(init,payer = fren,space = size_of::<MyStorage>()+8,seeds=[],bump)]
+    pub my_storage:Account<'info, MyStorage>,
+    #[account(mut)]
+    pub fren: Signer<'info>, // 此处传递了一个公共密钥
+    pub system_program: Program<'info, System>,
 }
 
+
+#[derive(Accounts)]
+pub struct UpdateValue<'info>  {
+    #[account(mut, seeds = [],bump)]
+    pub my_storage:Account<'info, MyStorage>,
+
+    // THIS FIELD MUST BE INCLUDED
+    #[account(mut)]
+    pub fren: Signer<'info>,
+}
+
+
+#[account]
+pub struct MyStorage{
+    x:u64,
+}
 #[derive(Accounts)]
 pub struct SplitSol<'info>{
     #[account(mut)]
