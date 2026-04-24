@@ -1,190 +1,122 @@
 use anchor_lang::prelude::*;
-use anchor_lang::system_program;
-
+use anchor_spl::associated_token::AssociatedToken;// Needed for ATA creation 创建 ATA 所需
+use anchor_spl::token::{self, Mint, MintTo, Token, TokenAccount, Transfer}; // 铸币帐户创建/处理所需
+// 导入 `calculate` 模块或库
+// pub mod calculate;
+// use std::mem::size_of;
+// use anchor_lang::system_program;
+// use std::str::FromStr;
 declare_id!("8sm8zjwUwhvBLxhv1RHd64fQvdAasxoE3j57NrqSxJdr");
 
 #[program]
-pub mod learn {
+pub mod keypair_vs_pda{
     use super::*;
+    // 此函数部署一个新的SPL token, 精度 为9，并且铸造了100个单位的token
+    pub fn create_and_mint_token(ctx:Context<CreateMint>)->Result<()>{
+        let mint_amount = 100_000_000_000;// 100 颗 精度为9的数量
+        let mint = ctx.accounts.new_mint.clone();
+        let destination_ata = ctx.accounts.new_ata.clone();
+        let authority = ctx.accounts.signer.clone();
+        let token_program = ctx.accounts.token_program.clone();
 
-    /*
-    pub fn initialize(_ctx: Context<Initialize>) -> Result<()> {
-        let rent =Rent::get()?;
-        let empty_account_size = 0;
-        let lamports = rent.minimum_balance(empty_account_size);
-
-        msg!("创建空账户的最小租金 : {} lamports", lamports);
-        msg!("约等于: {} SOL ", lamports as f64 / 1_000_000_000.0);
-        let account_size = 3;
-        let lamports_byte = rent.minimum_balance(account_size);
-        msg!("创建 {} 个字节的账户的租金 : {} lamports", account_size,lamports_byte);
-        msg!("约等于: {} SOL ", lamports_byte as f64 / 1_000_000_000.0);
-        Ok(())
-    }
-    pub fn read_balance(ctx: Context<ReadBalance>) -> Result<()> {
-        let balance = ctx.accounts.acct.to_account_info().lamports();
-
-        msg!("余额以 Lamports 表示为{}",balance);
-        msg!("约等于: {} SOL ", balance as f64 / 1_000_000_000.0);
-
-        Ok(())
-
-    }
-
-     */
-
-    /*
-    pub fn send_sol(ctx: Context<SendSol>,amount:u64)->Result<()>{
-        //   Solana 上每个程序只能执行自己的逻辑。你的 learn 程序想转 SOL，
-        //  但转账是 System Program 的功能，所以需要"跨程序调用"去调用它。CpiContext
-        //   就是描述这次调用所需的信息。
-        //  就像你（learn 程序）委托银行（System Program）帮你转账，
-        // CpiContext 就是那张转账委托单，上面写明了：找哪家银行、从谁的账户转、转到谁的账户。
-        let cpi_context=CpiContext::new(
-            //
-            ctx.accounts.system_program.to_account_info(),
-
-            system_program::Transfer {
-                from: ctx.accounts.signer.to_account_info(),
-                to: ctx.accounts.recipient.to_account_info(),
-            }
-        );
-        //  system_program::transfer(cpi_context, amount)? 才是真正"提交委托单"执行转账
-        system_program::transfer(cpi_context, amount)?;
-        Ok(())
-
-    }
-
-     */
-
-
-
-    /*
-    pub fn send_more<'a,'b,'c,'info>(
-        ctx: Context<'a,'b,'c,'info,SplitSol<'info>>,amount:u64)->Result<()>{
-        let amount_each_gets = amount/ctx.remaining_accounts.len() as u64;
-        let system_program = &ctx.accounts.system_program;
-        // 注意关键字 `remaining_accounts`
-        for recipient in ctx.remaining_accounts{
-            let cpi_accounts = system_program::Transfer{
-                from: ctx.accounts.signer.to_account_info(),
-                to: recipient.to_account_info(),
-            };
-            let cpi_program = system_program.to_account_info();
-            let cpi_context = CpiContext::new(cpi_program, cpi_accounts);
-
-            system_program::transfer(cpi_context,amount_each_gets)?;
-            // if !res.is_ok(){
-            //     return err!(Errors::TransferFailed)
-            // }
-
+        // 组装指令
+        let mint_to_instruction = MintTo {
+            mint: mint.to_account_info(),
+            to: destination_ata.to_account_info(),
+            authority: authority.to_account_info(),
         };
+        //构建一个指向 Token Program 的 CPI 上下文。
+        let cpi_ctx = CpiContext::new(token_program.to_account_info(), mint_to_instruction);
+        // 调用 Token Program 的 mint_to 指令，将 100 个 Token（精度为 9）铸造到 ATA。
+        token::mint_to(cpi_ctx, mint_amount)?;
         Ok(())
     }
-
-
-     */
-
-
-    pub fn more_signer(_ctx: Context<Initialize>)->Result<()>{
-        Ok(())
-    }
-
-    pub fn update_value(ctx: Context<UpdateValue>,new_value:u64)->Result<()>{
-        ctx.accounts.my_storage.x=new_value;
-        Ok(())
-    }
-
 
 
 }
 
+
 #[derive(Accounts)]
-pub struct Initialize<'info>  {
-    #[account(init,payer = fren,space = size_of::<MyStorage>()+8,seeds=[],bump)]
-    pub my_storage:Account<'info, MyStorage>,
+pub struct CreateMint<'info> {
+
     #[account(mut)]
-    pub fren: Signer<'info>, // 此处传递了一个公共密钥
+    pub signer: Signer<'info>, // 签名
+
+    #[account(
+    init,
+    payer = signer,
+    mint::decimals = 9,
+    mint::authority = signer,
+    // Commenting out or removing this line permanently disables the freeze authority.注释掉或删除此行将永久禁用冻结权限
+    mint::freeze_authority = signer,
+    // 当创建一个没有冻结权限的 token 时，Solana 会阻止任何未来的更新。
+    //  这使得 token 更加去中心化，因为没有任何权限可以冻结用户的 ATA。
+    seeds=[b"my_mint",signer.key().as_ref()],
+    bump)]
+    pub new_mint: Account<'info, Mint>,
+
+    #[account(init,
+    payer = signer,
+    associated_token::mint = new_mint,
+    associated_token::authority = signer)]
+    pub new_ata: Account<'info, TokenAccount>,
+
+    // 这代表 SPL Token Program (TokenkegQfeZ…) 它拥有和管理所有 mint 账户和关联的 token 账户。
+    pub token_program: Program<'info, Token>,
+    //  这代表 ATA 程序 (ATokenGPvbdGV...),它只负责创建 ATA
+    pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
 }
 
 
-#[derive(Accounts)]
-pub struct UpdateValue<'info>  {
-    #[account(mut, seeds = [],bump)]
-    pub my_storage:Account<'info, MyStorage>,
-
-    // THIS FIELD MUST BE INCLUDED
-    #[account(mut)]
-    pub fren: Signer<'info>,
-}
-
-
-#[account]
-pub struct MyStorage{
-    x:u64,
-}
-#[derive(Accounts)]
-pub struct SplitSol<'info>{
-    #[account(mut)]
-    signer: Signer<'info>,
-    system_program: Program<'info, System>,
-}
-
-#[derive(Accounts)]
-pub struct SendSol <'info> {
-    /// CHECK: we do not read or write the data of this account
-    #[account(mut)]
-    recipient1: UncheckedAccount<'info>,
-
-    /// CHECK: we do not read or write the data of this account
-    #[account(mut)]
-    recipient2: UncheckedAccount<'info>,
-
-    /// CHECK: we do not read or write the data of this account
-    #[account(mut)]
-    recipient3: UncheckedAccount<'info>,
-
-    /// CHECK: 不读取或者写入这个账户
-    #[account(mut)]
-    recipient4:UncheckedAccount<'info>,
-
-    system_program: Program<'info, System>,
-
-    #[account(mut)]
-    signer:Signer<'info>,
-}
-
-#[error_code]
-pub enum Errors {
-    #[msg("transfer failed")]
-    TransferFailed,
-}
-
-
 /*
 #[derive(Accounts)]
-pub struct ReadBalance <'info> {
-    /// CHECK:` 尽管我们读取了这个账户的余额，但是并没有用到这个信息
-    pub acct:UncheckedAccount<'info>,
-}
+pub struct Initialize<'info> {
+    #[account(init, payer = signer, space=size_of::<Pda>() + 8, seeds=[], bump)]
+    pub pda: Account<'info, Pda>,
+    #[account(mut)]
+    pub signer: Signer<'info>,
 
+
+    pub system_program: Program<'info, System>,
+
+}
 
  */
 
-
-
 /*
 
-#[account]
-pub struct Val {
-    value:u64,
-}
 #[derive(Accounts)]
-#[instruction(key:u64)]
-pub struct Set<'info> {
+pub struct Donate<'info> {
     #[account(mut)]
-    val:Account<'info, Val>,
+    pub signer: Signer<'info>,
+
+    #[account(mut)]
+    pub pda: Account<'info, Pda>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct Withdraw<'info>{
+    #[account(mut,address=Pubkey::from_str("28QdAWmR5Tn5NsifTBvB8DxJDXN5eaQbFVwHactRxmff").unwrap())]
+    pub signer: Signer<'info>,
+    #[account(mut)]
+    pub pda: Account<'info, Pda>,
+}
+
+#[derive(Accounts)]
+pub struct Delete<'info>{
+    #[account(mut,close = signer,seeds=[],bump)]
+    pub pda:Account<'info, Pda>,
+
+    #[account(mut)]
+    pub signer: Signer<'info>,
+}
+
+
+#[account]
+pub struct Pda{
+    pub x:u32,
 }
 
  */

@@ -6,13 +6,15 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-learn = "8sm8zjwUwhvBLxhv1RHd64fQvdAasxoE3j57NrqSxJdr"
+#learn = "8sm8zjwUwhvBLxhv1RHd64fQvdAasxoE3j57NrqSxJdr"
+keypair_vs_pda = "4wLnxvLwgXGT4eNg3D456K6Fxa1RieaUdERSPQ3WEpuV"
 
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "localnet"
+#cluster = "localnet"
+cluster = "devnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]

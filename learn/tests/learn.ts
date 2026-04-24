@@ -1,14 +1,20 @@
 import * as anchor from "@coral-xyz/anchor";
 import {Program} from "@coral-xyz/anchor";
-import {Learn} from "../target/types/learn";
+// import {Learn} from "../target/types/learn";
+// import {KeypairVsPda} from "../target/types/keypair_vs_pda";
 
 describe("learn", () => {
     // Configure the client to use the local cluster.
     anchor.setProvider(anchor.AnchorProvider.env());
 
-    const program = anchor.workspace.learn as Program<Learn>;
+    // const program = anchor.workspace.learn as Program<KeypairVsPda>;
 
-    const defaultKeyPair = new anchor.web3.PublicKey("28QdAWmR5Tn5NsifTBvB8DxJDXN5eaQbFVwHactRxmff")
+    // const defaultKeyPair = new anchor.web3.PublicKey("28QdAWmR5Tn5NsifTBvB8DxJDXN5eaQbFVwHactRxmff")
+
+
+
+
+
     /*
     it("初始化映射 !", async () => {
       // Add your test here.
@@ -64,10 +70,6 @@ describe("learn", () => {
      */
 
 
-    async function getBalance(account) {
-        const balance = await anchor.getProvider().connection.getBalance(account);
-        console.log(`${account} has  ${balance / anchor.web3.LAMPORTS_PER_SOL} SOL `);
-    }
 
     /*
     it("Transmit SOL", async () => {
@@ -113,7 +115,7 @@ describe("learn", () => {
 
 
 
-
+    /*
     it("test more signer", async () => {
         const alice = anchor.web3.Keypair.generate();
         const bob = anchor.web3.Keypair.generate();
@@ -141,22 +143,89 @@ describe("learn", () => {
         let value =await program.account.myStorage.fetch(myStorage);
         console.log(`存储的值为 ${value.x}`);
     });
+     */
+
+    /*
+    it("Alice transfers points to Bob",async ()=>{
+        const alice = anchor.web3.Keypair.generate();
+        const bob = anchor.web3.Keypair.generate();
+        const cindy = anchor.web3.Keypair.generate();
+
+        const  airdrop_alice_tx =await anchor.getProvider().connection.requestAirdrop(alice.publicKey,
+            1*anchor.web3.LAMPORTS_PER_SOL);
+        await confirmTransaction(airdrop_alice_tx);
+
+        const  airdrop_bob_tx =await anchor.getProvider().connection.requestAirdrop(bob.publicKey,
+            1*anchor.web3.LAMPORTS_PER_SOL);
+        await confirmTransaction(airdrop_bob_tx);
+
+        const  airdrop_cindy_tx =await anchor.getProvider().connection.requestAirdrop(cindy.publicKey,
+            1*anchor.web3.LAMPORTS_PER_SOL);
+        await confirmTransaction(airdrop_cindy_tx);
+
+        let seeds_alice = [alice.publicKey.toBytes()];
+        const [playerAlice,_bumpA]=anchor.web3.PublicKey.findProgramAddressSync(seeds_alice,program.programId)
+
+        let seeds_bob = [bob.publicKey.toBytes()]
+        const [playerBob,_bumpB]=anchor.web3.PublicKey.findProgramAddressSync(seeds_bob,program.programId)
+
+        let seeds_cindy = [cindy.publicKey.toBytes()]
+        const [playerCindy,_bumpC]=anchor.web3.PublicKey.findProgramAddressSync(seeds_cindy,program.programId)
+
+        // Alice 和 Bob 初始化他们的账户
+        await program.methods.initialize().accounts({
+            player:playerAlice,
+            signer:alice.publicKey
+        }).signers([alice]).rpc();
+
+        await program.methods.initialize().accounts({
+            player:playerBob,
+            signer:bob.publicKey
+        }).signers([bob]).rpc();
+
+        await program.methods.initialize().accounts({
+            player:playerCindy,
+            signer:cindy.publicKey
+        }).signers([cindy]).rpc();
+        console.log(`Alice 现在有 ${(await program.account.player.fetch(playerAlice)).points } 颗积分`)
+        console.log(`Bob   现在有 ${(await program.account.player.fetch(playerBob)).points } 颗积分`)
+        console.log(`cindy   现在有 ${(await program.account.player.fetch(playerCindy)).points } 颗积分`)
+
+        // 初始化完毕，现在开始 Alice 转 5积分给 Bob
+        await program.methods.transferPoints(5).accounts({
+            from:playerAlice,
+            to:playerBob,
+            authority:alice.publicKey
+            }
+        ).signers([alice]).rpc();
+        console.log(`Alice 现在有 ${(await program.account.player.fetch(playerAlice)).points } 颗积分`)
+        console.log(`Bob   现在有 ${(await program.account.player.fetch(playerBob)).points } 颗积分`)
+
+        // 初始化完毕，现在开始 Alice 转 15积分给 Bob
+        // await program.methods.transferPoints(15).accounts({
+        //         from:playerAlice,
+        //         to:playerBob,
+        //         authority:alice.publicKey
+        //     }
+        // ).signers([alice]).rpc();
+        console.log(`Alice 现在有 ${(await program.account.player.fetch(playerAlice)).points } 颗积分`)
+        console.log(`Bob   现在有 ${(await program.account.player.fetch(playerBob)).points } 颗积分`)
+
+        // 初始化完毕，现在开始 Alice 转 15积分给 Bob
+        await program.methods.transferPoints(1).accounts({
+                from:playerAlice,
+                to:playerBob,
+                authority:alice.publicKey
+            }
+        ).signers([bob]).rpc();
+        console.log(`Alice 现在有 ${(await program.account.player.fetch(playerAlice)).points } 颗积分`)
+        console.log(`Bob   现在有 ${(await program.account.player.fetch(playerBob)).points } 颗积分`)
+    });
+
+     */
+
+
 
 });
 // solana-test-validator
 // anchor test --skip-local-validator
-// 此函数向一个地址空投SOL
-async function airdropSol(publickey, amount) {
-    let airdropTx = await anchor.getProvider().connection.requestAirdrop(publickey, amount);
-    await confirmTransaction(airdropTx);
-}
-
-async function confirmTransaction(tx) {
-    const latestBlockHash = await anchor.getProvider().connection.getLatestBlockhash();
-    await anchor.getProvider().connection.confirmTransaction(
-        {
-            blockhash: latestBlockHash.blockhash,
-            lastValidBlockHeight: latestBlockHash.lastValidBlockHeight,
-            signature: tx,
-        });
-}

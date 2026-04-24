@@ -1,8 +1,8 @@
 use anchor_lang::prelude::*;
 // 导入 `calculate` 模块或库
 // pub mod calculate;
-declare_id!("ApfcbYE4FcrTPwkYZe25jn89XyQEmi22XQB1of1bqLG5");
-const OWNER: &str = "28QdAWmR5Tn5NsifTBvB8DxJDXN5eaQbFVwHactRxmff";
+// declare_id!("ApfcbYE4FcrTPwkYZe25jn89XyQEmi22XQB1of1bqLG5");
+// const OWNER: &str = "28QdAWmR5Tn5NsifTBvB8DxJDXN5eaQbFVwHactRxmff";
 /*
 #[program]
 pub mod day_2 {
