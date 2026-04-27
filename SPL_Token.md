@@ -643,6 +643,166 @@ close_account(...)
 
 ---
 
+## Anchor 合约实战示例
+
+### `create_and_mint_token` — 创建代币并铸造
+
+一次性完成：创建 Mint（PDA）+ 创建 ATA + 铸造 100 个代币。
+
+```rust
+// ===== 指令逻辑 =====
+pub fn create_and_mint_token(ctx: Context<CreateMint>) -> Result<()> {
+    let mint_amount = 100_000_000_000; // 100 颗，精度 9
+
+    let mint_to_instruction = MintTo {
+        mint:      ctx.accounts.new_mint.to_account_info(),  // 铸造哪个代币
+        to:        ctx.accounts.new_ata.to_account_info(),   // 铸造到哪个 ATA
+        authority: ctx.accounts.signer.to_account_info(),    // 谁有增发权（mint_authority）
+    };
+    let cpi_ctx = CpiContext::new(
+        ctx.accounts.token_program.to_account_info(),
+        mint_to_instruction,
+    );
+    token::mint_to(cpi_ctx, mint_amount)?;
+    Ok(())
+}
+
+// ===== 账户结构 =====
+#[derive(Accounts)]
+pub struct CreateMint<'info> {
+    #[account(mut)]
+    pub signer: Signer<'info>,
+
+    #[account(
+        init,                                          // Anchor 自动创建并初始化
+        payer = signer,                                // rent 由 signer 支付
+        mint::decimals = 9,
+        mint::authority = signer,                      // 增发权归 signer
+        mint::freeze_authority = signer,               // 冻结权归 signer
+        seeds = [b"my_mint", signer.key().as_ref()],   // Mint 是 PDA，地址可确定性推导
+        bump
+    )]
+    pub new_mint: Account<'info, Mint>,
+
+    #[account(
+        init,
+        payer = signer,
+        associated_token::mint = new_mint,             // 属于哪个代币
+        associated_token::authority = signer,          // signer 是 ATA 的 owner
+    )]
+    pub new_ata: Account<'info, TokenAccount>,
+
+    pub token_program:            Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
+    pub system_program:           Program<'info, System>,
+}
+```
+
+**关键点：**
+- `new_mint` 用 PDA，不需要额外保存 keypair，地址由 `signer + "my_mint"` 唯一确定
+- `new_ata` 用 `associated_token::` 约束，Anchor 自动调用 ATA 程序创建，无需传 seeds
+- `init` 约束意味着该指令**只能调用一次**，账户已存在会报错
+
+---
+
+### `transfer_token` — 转移代币
+
+从 signer 的 ATA 转移指定数量到接收方的 ATA。
+
+```rust
+// ===== 指令逻辑 =====
+pub fn transfer_token(ctx: Context<TransferToken>, amount: u64) -> Result<()> {
+    let transfer_instruction = Transfer {
+        from:      ctx.accounts.from_ata.to_account_info(),  // 发送方 ATA
+        to:        ctx.accounts.to_ata.to_account_info(),    // 接收方 ATA
+        authority: ctx.accounts.signer.to_account_info(),    // from_ata 的 owner
+    };
+    let cpi_ctx = CpiContext::new(
+        ctx.accounts.token_program.to_account_info(),
+        transfer_instruction,
+    );
+    token::transfer(cpi_ctx, amount)?;
+    Ok(())
+}
+
+// ===== 账户结构 =====
+#[derive(Accounts)]
+pub struct TransferToken<'info> {
+    #[account(mut)]
+    pub signer: Signer<'info>,
+
+    pub mint: Account<'info, Mint>,
+
+    #[account(
+        mut,
+        associated_token::mint = mint,
+        associated_token::authority = signer,   // 验证 from_ata 确实属于 signer
+    )]
+    pub from_ata: Account<'info, TokenAccount>,
+
+    #[account(
+        init_if_needed,                          // 接收方 ATA 不存在时自动创建
+        payer = signer,
+        associated_token::mint = mint,
+        associated_token::authority = to,        // ATA 的 owner 是接收方
+    )]
+    pub to_ata: Account<'info, TokenAccount>,
+
+    /// CHECK: 接收方钱包地址，只用于派生 to_ata，不做其他操作
+    pub to: UncheckedAccount<'info>,
+
+    pub token_program:            Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
+    pub system_program:           Program<'info, System>,
+}
+```
+
+**关键点：**
+- `from_ata` 用 `associated_token::` 约束验证它确实属于 `signer`，防止传入错误账户
+- `to_ata` 用 `init_if_needed`，接收方没有 ATA 时由 signer 自动出钱创建
+- `to` 标注 `/// CHECK:`，告诉 Anchor 这个账户不需要做安全检查（只用来派生 ATA 地址）
+- `amount` 是原始整数，100 个精度为 9 的代币 = `100_000_000_000`
+
+---
+
+### TypeScript 测试（配套）
+
+```typescript
+// create_and_mint_token 测试
+const [mint] = PublicKey.findProgramAddressSync(
+    [Buffer.from("my_mint"), signerKp.publicKey.toBuffer()],
+    program.programId
+);
+const signerAta = splToken.getAssociatedTokenAddressSync(mint, signerKp.publicKey);
+
+await program.methods.createAndMintToken().accounts({
+    signer:                  signerKp.publicKey,
+    newMint:                 mint,
+    newAta:                  signerAta,
+    tokenProgram:            splToken.TOKEN_PROGRAM_ID,
+    associatedTokenProgram:  splToken.ASSOCIATED_TOKEN_PROGRAM_ID,
+    systemProgram:           anchor.web3.SystemProgram.programId,
+}).rpc();
+
+// transfer_token 测试
+const toKp    = new web3.Keypair();
+const toAta   = splToken.getAssociatedTokenAddressSync(mint, toKp.publicKey);
+const amount  = new anchor.BN(10_000_000_000); // 转 10 个
+
+await program.methods.transferToken(amount).accounts({
+    signer:                  signerKp.publicKey,
+    mint:                    mint,
+    fromAta:                 signerAta,
+    toAta:                   toAta,
+    to:                      toKp.publicKey,
+    tokenProgram:            splToken.TOKEN_PROGRAM_ID,
+    associatedTokenProgram:  splToken.ASSOCIATED_TOKEN_PROGRAM_ID,
+    systemProgram:           anchor.web3.SystemProgram.programId,
+}).rpc();
+```
+
+---
+
 ## 代码示例
 
 ### TypeScript（@solana/spl-token）

@@ -30,7 +30,12 @@ anchor test --skip-local-validator
 # 仅构建
 anchor build
 
-# 按名称运行单个测试
+# 按名称运行单个测试（需手动设置环境变量）
+# localnet：
+ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=~/.config/solana/id.json \
+yarn run ts-mocha -p ./tsconfig.json -t 1000000 "tests/**/*.ts" --grep "测试名称"
+# devnet：
+ANCHOR_PROVIDER_URL=https://api.devnet.solana.com ANCHOR_WALLET=~/.config/solana/id.json \
 yarn run ts-mocha -p ./tsconfig.json -t 1000000 "tests/**/*.ts" --grep "测试名称"
 ```
 
