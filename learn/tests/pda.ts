@@ -10,6 +10,13 @@ import {
     createCreateMetadataAccountV3Instruction,
     PROGRAM_ID as TOKEN_METADATA_PROGRAM_ID,
 } from "@metaplex-foundation/mpl-token-metadata";
+
+import {
+    createAssociatedTokenAccount,
+    getAccount,
+    getMint,
+    TOKEN_PROGRAM_ID,
+} from "@solana/spl-token";
 describe("keypair_vs_pda", () => {
     // Configure the client to use the local cluster.
     anchor.setProvider(anchor.AnchorProvider.env());
@@ -129,9 +136,20 @@ describe("keypair_vs_pda", () => {
      */
 
     const provider = anchor.AnchorProvider.env();
-    const signerKp = provider.wallet.payer;
-    const toKp = new web3.Keypair();
+    // const signerKp = provider.wallet.payer;
+    const adminKp = provider.wallet.payer;
+    const buyer = adminKp; // 使用相同的密钥对作为管理员和买家进行测试
 
+    const toKp = new web3.Keypair();
+    const connection = provider.connection;
+
+    const TOKENS_PER_SOL = 100;
+    // 为 admin config 账户生成密钥对（将作为签名者传递以授权 adminConfig 账户创建）
+    const adminConfigKp = web3.Keypair.generate();
+
+    let mint: anchor.web3.PublicKey;
+    let treasuryPda: anchor.web3.PublicKey;
+    let buyerAta: anchor.web3.PublicKey;
     /*
     it("Creates a new mint and associated token account using CPI",async ()=>{
 
@@ -235,7 +253,7 @@ describe("keypair_vs_pda", () => {
     })
     */
 
-
+    /*
     it("TypeScript SPL Token Tests", async () => {
 
         const mintDecimals = 6;
@@ -244,30 +262,7 @@ describe("keypair_vs_pda", () => {
         // const toKp = new web3.Keypair();
 
         //  先创建Mint 
-        /**
- * Create and initialize a new mint
- *
- * @param connection      Connection to use
- * @param payer           Payer of the transaction and initialization fees
- * @param mintAuthority   Account or multisig that will control minting
- * @param freezeAuthority Optional account or multisig that can freeze token accounts
- * @param decimals        Location of the decimal place
- * @param keypair         Optional keypair, defaulting to a new random one
- * @param confirmOptions  Options for confirming the transaction
- * @param programId       SPL Token program account
- *
- * @return Address of the new mint
-export async function createMint(
-    connection: Connection,
-    payer: Signer,
-    mintAuthority: PublicKey,
-    freezeAuthority: PublicKey | null,
-    decimals: number,
-    keypair = Keypair.generate(),
-    confirmOptions?: ConfirmOptions,
-    programId = TOKEN_PROGRAM_ID,
-): Promise<PublicKey> {}
-*/
+
 
         // 返回的是一个publickey ,返回的就是这个代币的Mint,以后关于这个代币的操作都要用到这个MintPublicKey
         const mintPublicKey = await splToken.createMint(
@@ -330,32 +325,7 @@ export async function createMint(
         console.log("Metadata Account:", metadataPDA.toString());
 
         // 然后调用MintTo 铸造
-        /**
-         * Mint tokens to an account
-         *
-         * @param connection     Connection to use
-         * @param payer          Payer of the transaction fees
-         * @param mint           Mint for the account
-         * @param destination    Address of the account to mint to
-         * @param authority      Minting authority
-         * @param amount         Amount to mint
-         * @param multiSigners   Signing accounts if `authority` is a multisig
-         * @param confirmOptions Options for confirming the transaction
-         * @param programId      SPL Token program account
-         *
-         * @return Signature of the confirmed transaction
-        export async function mintTo(
-            connection: Connection,
-            payer: Signer,
-            mint: PublicKey,
-            destination: PublicKey,
-            authority: Signer | PublicKey,
-            amount: number | bigint,
-            multiSigners: Signer[] = [],
-            confirmOptions?: ConfirmOptions,
-            programId = TOKEN_PROGRAM_ID,
-        ): Promise<TransactionSignature> {}
-        */
+
 
         await splToken.mintTo(
             provider.connection,
@@ -375,32 +345,7 @@ export async function createMint(
 
         assert.equal(accounBalances.value.amount, mintAmount.toString(), "余额应该和 mint 的数量匹配");
         // 转账
-        /**
-         * Transfer tokens from one account to another
-         *
-         * @param connection     Connection to use
-         * @param payer          Payer of the transaction fees
-         * @param source         Source account
-         * @param destination    Destination account
-         * @param owner          Owner of the source account
-         * @param amount         Number of tokens to transfer
-         * @param multiSigners   Signing accounts if `owner` is a multisig
-         * @param confirmOptions Options for confirming the transaction
-         * @param programId      SPL Token program account
-         *
-         * @return Signature of the confirmed transaction
-        export async function transfer(
-            connection: Connection,
-            payer: Signer,
-            source: PublicKey,
-            destination: PublicKey,
-            owner: Signer | PublicKey,
-            amount: number | bigint,
-            multiSigners: Signer[] = [],
-            confirmOptions?: ConfirmOptions,
-            programId = TOKEN_PROGRAM_ID
-        ): Promise<TransactionSignature> {}
-        */
+        
         // 读取转移前的余额
 
         // 创建接收者ATA，由本地钱包去创建
@@ -432,13 +377,165 @@ export async function createMint(
         console.log("转移后的toKp余额:", destinationBalanceAfter.value.amount);
         assert.equal(sourceBalanceAfter.value.amount, (mintAmount - transferAmount).toString(), "源应该还剩 500 个 token");
         assert.equal(destinationBalanceAfter.value.amount, transferAmount.toString(), "目标应该收到 500 个 token");
+    })
+    */
+
+    /*
+    it("test init token sell", async () => {
+
+        // pda mint 账户，通过程序id 和特定的mint 种子生产mint 地址
+        [mint] = web3.PublicKey.findProgramAddressSync(
+            [Buffer.from("token_mint")],
+            program.programId
+        );
+
+        // 国库pda地址
+        [treasuryPda] = web3.PublicKey.findProgramAddressSync(
+            [Buffer.from("treasury")],
+            program.programId
+        );
+
+        // 初始化方法调用
+        const tx = await program.methods.initialize().accounts({
+            admin: adminKp.publicKey,
+            adminConfig: adminConfigKp.publicKey,
+            mint: mint,
+            treasury: treasuryPda,
+            tokenProgram: TOKEN_PROGRAM_ID,
+            systemProgram: anchor.web3.SystemProgram.programId,
+        }).signers([adminKp, adminConfigKp]).rpc();
+
+        console.log("initialize tx:", tx);
+
+        const mintInfo = await getMint(connection, mint);
+        assert.equal(mintInfo.mintAuthority.toBase58(), mint.toBase58());
+        assert.equal(Number(mintInfo.supply), 0);
+        assert.equal(mintInfo.decimals, 9);
+
 
     })
+        */
+
+    /*
+    it("buy tokens", async () => {
+        const solToSend = new anchor.BN(1e9); // 1 SOL
+        const expectedTokenAmount = Number(solToSend) * TOKENS_PER_SOL; // 1*100 个 token
+
+        const initialTreasuryBalance = await connection.getBalance(treasuryPda);
+
+        // 为买家创建他的ata
+        buyerAta = await createAssociatedTokenAccount(
+            provider.connection,
+            buyer,
+            mint,
+            buyer.publicKey,
+            undefined,
+            TOKEN_PROGRAM_ID
+        );
+
+        const buyerAtaInfo = await getAccount(
+            connection,
+            buyerAta,
+            undefined,
+            TOKEN_PROGRAM_ID
+        )
+        const initialBuyerAtaBalance = Number(buyerAtaInfo.amount);
+
+        // 调用我们程序的Mint 函数已购买token
+        const tx = await program.methods.mint(solToSend).accounts({
+            buyer: buyer.publicKey,
+            mint: mint,
+            buyerAta: buyerAta,
+            treasury: treasuryPda,
+            tokenProgram: TOKEN_PROGRAM_ID,
+            systemProgram: anchor.web3.SystemProgram.programId,
+        }).rpc();
+        console.log("mint tx:", tx);
+        console.log("Sent", solToSend, "SOL, expecting", expectedTokenAmount, "tokens");
+
+        const newTreasuryBalance = await connection.getBalance(treasuryPda);
+        assert.equal(
+            newTreasuryBalance - initialTreasuryBalance,
+            Number(solToSend),
+            "SOL 未正确转移到 treasury"
+        );
+
+        const updatedBuyerAtaInfo = await getAccount(connection, buyerAta, undefined, TOKEN_PROGRAM_ID);
+        const newBuyerAtaBalance = Number(updatedBuyerAtaInfo.amount);
+
+        assert.equal(
+            newBuyerAtaBalance - initialBuyerAtaBalance,
+            expectedTokenAmount,
+            "Token 未正确 mint"
+        );
+
+    })
+        */
+
+    it("withdraw founds from treasury", async () => {
+        // 国库pda地址
+        [treasuryPda] = web3.PublicKey.findProgramAddressSync(
+            [Buffer.from("treasury")],
+            program.programId
+        );
+
+        const initialAdminBalance = await connection.getBalance(adminKp.publicKey);
+        const initialTreasuryBalance = await connection.getBalance(treasuryPda);
+
+        console.log("Initial treasury balance:", initialTreasuryBalance, "SOL");
+        console.log("Initial admin balance:", initialAdminBalance, "SOL");
+        assert.isAbove(
+            initialTreasuryBalance,
+            0,
+            "Treasury should have funds from previous tests"
+        );
+
+        const amountToWithdraw = new anchor.BN(Math.floor(initialTreasuryBalance / 2)); // 提取一半的 treasury 余额
+        // const amountToWithdraw = new anchor.BN(Math.floor(500000000)); // 提取一半的 treasury 余额
+
+        try {
+            const tx = await program.methods
+                .withdrawFunds(amountToWithdraw)
+                .accounts({
+                    admin: adminKp.publicKey,
+                    adminConfig: new PublicKey("Bve7yrmgma4jzzvvnth8Xzs3rWax7ftzBTAMhjATiDfF"),
+                    treasury: treasuryPda,
+                    systemProgram: anchor.web3.SystemProgram.programId,
+                })
+                .rpc();
+            console.log("withdrawFunds tx:", tx);
+
+            const newAdminBalance = await connection.getBalance(adminKp.publicKey);
+            const newTreasuryBalance = await connection.getBalance(treasuryPda);
+
+            console.log("New treasury balance:", newTreasuryBalance, "SOL");
+            console.log("New admin balance:", newAdminBalance, "SOL");
+
+            // 断言 treasury 余额减少了我们提取的金额，即初始 treasury 余额的一半
+            assert.approximately(
+                initialTreasuryBalance - newTreasuryBalance,
+                Number(amountToWithdraw),
+                10000,
+                "Treasury 余额没有减少到大致正确的金额"
+            );
+
+            // 断言管理员余额在提款后增加
+            assert.isTrue(
+                newAdminBalance > initialAdminBalance,
+                "提款后，管理员余额没有增加"
+            );
+        } catch (error) {
+            console.error("Error in withdraw test:", error);
+            throw error;
+        }
+    })
+
 
     // solana-test-validator
     // anchor test --skip-local-validator
     // 单独运行某个测试：
     // anchor test --skip-local-validator -- --grep "TypeScript SPL Token Tests"
+    // ANCHOR_PROVIDER_URL=https://api.devnet.solana.com ANCHOR_WALLET=~/.config/solana/id.json yarn run ts-mocha -p ./tsconfig.json -t 1000000 "tests/pda.ts"
 
     // 此函数向一个地址空投SOL
     async function airdropSol(publickey, amount) {

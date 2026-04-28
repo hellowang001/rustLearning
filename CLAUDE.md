@@ -63,3 +63,76 @@ learn/                        # Anchor 工作区根目录
 ## 工作模式
 
 每个学习主题在 `lib.rs` 中实现为一个或多个 Anchor 指令，并在 `learn.ts` 中编写对应测试。旧的实验代码注释保留（不删除），供日后参考。
+
+---
+
+## 学习笔记
+
+### SOL 转移（Transfer SOL）
+
+在 Anchor 合约中转移原生 SOL，使用 `system_program::transfer` CPI。
+
+#### Rust 合约
+
+```rust
+use anchor_lang::system_program;
+
+pub fn transfer_sol(ctx: Context<TransferSol>, amount: u64) -> Result<()> {
+    let cpi_ctx = CpiContext::new(
+        ctx.accounts.system_program.to_account_info(),
+        system_program::Transfer {
+            from: ctx.accounts.from.to_account_info(),
+            to:   ctx.accounts.to.to_account_info(),
+        },
+    );
+    system_program::transfer(cpi_ctx, amount)?;
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct TransferSol<'info> {
+    #[account(mut)]
+    pub from: Signer<'info>,       // 付款方，必须是签名者
+    #[account(mut)]
+    pub to: SystemAccount<'info>,  // 收款方（普通钱包账户）
+    pub system_program: Program<'info, System>,
+}
+```
+
+**要点：**
+- `from` 必须是 `Signer`，否则 System Program 拒绝扣款
+- `from` 和 `to` 都要加 `#[account(mut)]`，因为余额会变化
+- `amount` 单位是 **lamports**（1 SOL = 1_000_000_000 lamports）
+- 收款方用 `SystemAccount` 类型（普通钱包），若是合约 PDA 账户则用 `Account<'info, T>`
+
+#### 从 PDA 转出 SOL
+
+PDA 没有私钥，不能作为普通 Signer，需要用 `CpiContext::new_with_signer`：
+
+```rust
+let seeds = &[b"my_pda", &[ctx.bumps.pda]];
+let signer_seeds = &[&seeds[..]];
+
+let cpi_ctx = CpiContext::new_with_signer(
+    ctx.accounts.system_program.to_account_info(),
+    system_program::Transfer {
+        from: ctx.accounts.pda.to_account_info(),
+        to:   ctx.accounts.to.to_account_info(),
+    },
+    signer_seeds,
+);
+system_program::transfer(cpi_ctx, amount)?;
+```
+
+#### TypeScript 测试
+
+```typescript
+await program.methods
+    .transferSol(new anchor.BN(1_000_000_000)) // 1 SOL
+    .accounts({
+        from: provider.wallet.publicKey,
+        to: recipient.publicKey,
+        systemProgram: SystemProgram.programId,
+    })
+    .rpc();
+```
