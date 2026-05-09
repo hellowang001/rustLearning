@@ -13,8 +13,9 @@ keypair_vs_pda = "4wLnxvLwgXGT4eNg3D456K6Fxa1RieaUdERSPQ3WEpuV"
 url = "https://api.apr.dev"
 
 [provider]
-#cluster = "localnet"
-cluster = "devnet"
+# cluster = "localnet"
+# cluster = "devnet"
+cluster = "https://devnet.helius-rpc.com/?api-key=9e16b6ee-45f4-4544-80f3-92370659cb99"
 wallet = "~/.config/solana/id.json"
 
 [scripts]

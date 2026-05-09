@@ -6,7 +6,11 @@
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",
-    "@metaplex-foundation/mpl-token-metadata": "^2.13.0"
+    "@metaplex-foundation/mpl-token-metadata": "^2.13.0",
+    "@raydium-io/raydium-sdk-v2": "^0.2.42-alpha",
+    "@solana/spl-token": "^0.4.14",
+    "@solana/spl-token-metadata": "^0.1.6",
+    "bs58": "^6.0.0"
   },
   "devDependencies": {
     "@types/bn.js": "^5.1.0",

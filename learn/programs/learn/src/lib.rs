@@ -1,16 +1,16 @@
 use anchor_lang::prelude::*;
-use anchor_lang::system_program::{transfer, Transfer};
-use anchor_spl::token::{self, mint_to, Mint, MintTo, Token, TokenAccount}; // 铸币帐户创建/处理所需
-                                                                           // 导入 `calculate` 模块或库
-                                                                           // pub mod calculate;
-                                                                           // use std::mem::size_of;
-                                                                           // use anchor_lang::system_program;
-                                                                           // use std::str::FromStr;
-declare_id!("8sm8zjwUwhvBLxhv1RHd64fQvdAasxoE3j57NrqSxJdr");
-// 定义几个常量作为代币的属性
-const TOKENS_PER_SOL: u64 = 100; // 单价，每个sol 换多少颗 代币
+use anchor_lang::solana_program::rent::Rent;
+// use anchor_lang::solana_program::program as solana_program;
 
-const SUPPLY_CAP: u64 = 1000e9 as u64; // 最大供应量 1000个 9精度
+use anchor_lang::system_program;
+use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
+use raydium_cpmm_cpi::{
+    cpi,
+    program::RaydiumCpmm,
+    states::{AmmConfig, ObservationState, PoolState},
+};
+/// sha256("global:swap_base_input")[0..8]
+declare_id!("8sm8zjwUwhvBLxhv1RHd64fQvdAasxoE3j57NrqSxJdr");
 
 #[program]
 pub mod keypair_vs_pda {
@@ -80,12 +80,17 @@ pub mod keypair_vs_pda {
     }
     */
 
+    /*
+
     // 初始化函数，将代币初始化
     pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
         // 设置管理员密钥
         ctx.accounts.admin_config.admin = ctx.accounts.admin.key();
         Ok(())
     }
+    */
+
+    /*
 
     // 铸造代币，出
     pub fn mint(ctx: Context<MintTokens>, lamports: u64) -> Result<()> {
@@ -133,6 +138,10 @@ pub mod keypair_vs_pda {
         Ok(())
     }
 
+    */
+
+    /*
+
     pub fn withdraw_funds(ctx: Context<WithdrawFunds>,amount:u64)->Result<()>{
         // 检查余额
         let treasury_balance = ctx.accounts.treasury.lamports();
@@ -142,13 +151,13 @@ pub mod keypair_vs_pda {
         let bump = ctx.bumps.treasury;
         let signer_seeds: &[&[&[u8]]] = &[&[b"treasury".as_ref(), &[bump]]];
 
-        // 准备 CPI 上下文 
+        // 准备 CPI 上下文
         let transfer_instruction = Transfer{
             from:ctx.accounts.treasury.to_account_info(),
             to:ctx.accounts.admin.to_account_info(),
         };
         let cpi_ctx: CpiContext<'_, '_, '_, '_, Transfer<'_>> = CpiContext::new_with_signer(
-            ctx.accounts.system_program.to_account_info(), 
+            ctx.accounts.system_program.to_account_info(),
             transfer_instruction, signer_seeds,
         );
         transfer(cpi_ctx, amount)?;
@@ -156,8 +165,350 @@ pub mod keypair_vs_pda {
 
         Ok(())
     }
+    */
+
+    pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
+        // 初始化银行，就是存储所有用户的所有资产的地方
+
+        let bank = &mut ctx.accounts.bank;
+
+        bank.total_deposits = 0;
+        msg!("银行初始化完成！");
+        Ok(())
+    }
+
+    //创建用户账户--->给用户开户
+    pub fn create_user_account(ctx: Context<CreateUserAccount>) -> Result<()> {
+        // 初始化用户的账户，
+        let user_accounr = &mut ctx.accounts.user_account;
+        user_accounr.owner = ctx.accounts.user.key(); // 把 开户用户的拥有者标记为这个方法的调用者
+        user_accounr.balance = 0;
+
+        msg!("已为一下用户创建账户：{:?}", user_accounr.owner);
+
+        Ok(())
+    }
+
+    pub fn deposit(ctx: Context<Deposit>, amount: u64) -> Result<()> {
+        // 验证存款金额是否大于零
+        require!(amount > 0, BankError::ZeroAmount);
+        // 创建并执行系统 transfer 指令（通过 CPI）以将 SOL 从用户的钱包提取到银行账户
+        let user = &ctx.accounts.user.key();
+        // let bank = &ctx.accounts.bank.key();
+
+        system_program::transfer(
+            CpiContext::new(
+                ctx.accounts.system_program.to_account_info(),
+                system_program::Transfer {
+                    from: ctx.accounts.user.to_account_info(),
+                    to: ctx.accounts.bank.to_account_info(),
+                },
+            ),
+            amount,
+        )?;
+
+        // 通过将存款金额添加到他们的 user_account PDA，安全地增加用户的账户余额
+        // 更新账户余额
+        let user_account = &mut ctx.accounts.user_account;
+        user_account.balance = user_account
+            .balance
+            .checked_add(amount)
+            .ok_or(BankError::Overflow)?;
+        // 以相同金额更新银行的总存款
+        let bank = &mut ctx.accounts.bank;
+        bank.total_deposits = bank
+            .total_deposits
+            .checked_add(amount)
+            .ok_or(BankError::Overflow)?;
+        // 记录存款金额和用户地址
+        msg!(" 为用户 {} 存了 {} lamports", user, amount);
+
+        Ok(())
+    }
+
+    pub fn get_balance(ctx: Context<GetBalance>) -> Result<u64> {
+        // 获取用户账户
+        let user_account = &ctx.accounts.user_account;
+        let balances = user_account.balance;
+        msg!("用户{} 当前余额{}", user_account.owner, balances);
+        Ok(balances)
+    }
+    pub fn calculate_interest(ctx: Context<GetBalance>) -> Result<u64> {
+        let balance = ctx.accounts.user_account.balance;
+        let interest = balance / 100; // 1% 利息
+        Ok(interest)
+    }
+
+    pub fn withdraw(ctx: Context<Withdraw>, amount: u64) -> Result<()> {
+        // 验证提款金额是否大于零
+        require!(amount > 0, BankError::ZeroAmount);
+        // 检查用户是否有足够的余额进行提款
+        // 拿用户
+        let user_account = &mut ctx.accounts.user_account;
+        let bank = &mut ctx.accounts.bank;
+        let user = ctx.accounts.user.key();
+
+        require!(user_account.balance > 0, BankError::ZeroAmount);
+        // 使用检查的算术更新用户账户余额和银行的总存款
+        // 更新账户余额
+        user_account.balance = user_account
+            .balance
+            .checked_sub(amount)
+            .ok_or(BankError::Underflow)?;
+        // 更新银行余额
+        bank.total_deposits = bank
+            .total_deposits
+            .checked_sub(amount)
+            .ok_or(BankError::Underflow)?;
+        // 计算保持账户免租金所需的最低余额
+        let rent = Rent::get()?;
+        let user_account_info = user_account.to_account_info();
+        let minimum_balance = rent.minimum_balance(user_account_info.data_len());
+        // 确定保留免租金最低限额的安全转移金额
+        // 计算安全转移金额(保留免租金最低限额)
+        let available_lamports = user_account.get_lamports();
+        let transfer_amount = amount.min(available_lamports.saturating_sub(minimum_balance));
+        // 使用直接 lamport 操作转移 SOL（因为程序拥有这些账户）
+        **user_account_info.try_borrow_mut_lamports()? -= transfer_amount;
+        **ctx
+            .accounts
+            .user
+            .to_account_info()
+            .try_borrow_mut_lamports()? += transfer_amount;
+        // 记录提款详细信息  immutable borrow occurs here cannot assign
+        msg!("为 {} 提取了 {} lamports", user, amount);
+        Ok(())
+    }
+
+    /// 通过原始 CPI 调用 Raydium CPMM 的 swap_base_input 指令
+    /// amount_in:          投入的代币数量（最小单位）
+    /// minimum_amount_out: 最少换出数量，低于则失败（滑点保护）
+    pub fn proxy_swap_base_input(
+        ctx: Context<ProxySwapBaseInput>,
+        amount_in: u64,
+        minimum_amount_out: u64,
+    ) -> Result<()> {
+        // 第一步是构建cpi
+        let cpi_accounts = cpi::accounts::Swap {
+            payer: ctx.accounts.payer.to_account_info(),
+            authority: ctx.accounts.authority.to_account_info(),
+            amm_config: ctx.accounts.amm_config.to_account_info(),
+            pool_state: ctx.accounts.pool_state.to_account_info(),
+            input_token_account: ctx.accounts.input_token_account.to_account_info(),
+            output_token_account: ctx.accounts.output_token_account.to_account_info(),
+            input_vault: ctx.accounts.input_vault.to_account_info(),
+            output_vault: ctx.accounts.output_vault.to_account_info(),
+            input_token_program: ctx.accounts.input_token_program.to_account_info(),
+            output_token_program: ctx.accounts.output_token_program.to_account_info(),
+            input_token_mint: ctx.accounts.input_token_mint.to_account_info(),
+            output_token_mint: ctx.accounts.output_token_mint.to_account_info(),
+            observation_state: ctx.accounts.observation_state.to_account_info(),
+        };
+        // 第二步是组织上下文Account
+        let cpi_context =
+            CpiContext::new(ctx.accounts.cp_swap_program.to_account_info(), cpi_accounts);
+        cpi::swap_base_input(cpi_context, amount_in, minimum_amount_out)?;
+        Ok(())
+    }
 }
 
+#[derive(Accounts)]
+pub struct Initialize<'info> {
+    #[account(
+        init,
+        payer=payer,
+        space=8+Bank::INIT_SPACE,
+    )]
+    pub bank: Account<'info, Bank>, // 银行账户，初始化方法就是为了初始化银行，分配空间，存储数据
+
+    #[account(mut)]
+    pub payer: Signer<'info>, // 签名者，
+
+    pub system_program: Program<'info, System>, // 有init 就必须要有系统程序，
+}
+
+#[derive(Accounts)]
+pub struct CreateUserAccount<'info> {
+    #[account(mut)]
+    pub bank: Account<'info, Bank>, // 想要创建账户就必须把Bank 传进来，这个bank 就是一个随机的密钥对，而你下次要修改它数据的时候就传它的地址即可
+
+    #[account(
+        init,
+        payer=user,
+        space=8+UserAccount::INIT_SPACE,
+        seeds=[b"bank_account",user.key().as_ref()],
+        bump,
+    )]
+    pub user_account: Account<'info, UserAccount>,
+
+    #[account(mut)]
+    pub user: Signer<'info>,
+    // 当有一个初始化的account 的时候，就必须要有系统程序system_program
+    pub system_program: Program<'info, System>,
+}
+
+// 用于跟踪所有用户的全部储蓄
+#[account]
+#[derive(InitSpace)]
+pub struct Bank {
+    pub total_deposits: u64, // 银行账户就是存储了一个金额
+}
+
+// 存储单个用户的 余额，
+#[account]
+#[derive(InitSpace)]
+pub struct UserAccount {
+    pub owner: Pubkey, // 存储用户账户的所有者，一个地址
+    pub balance: u64,  // 存储余额
+}
+
+// 充值用的，充值会用到银行，用户，签名，系统程序
+#[derive(Accounts)]
+pub struct Deposit<'info> {
+    #[account(mut)]
+    pub bank: Account<'info, Bank>, // 因为已经被初始化了，所以直接引用即可
+
+    #[account(
+        mut,
+        seeds=[b"bank_account",user.key().as_ref()],
+        bump,
+        constraint=user_account.owner==user.key()@BankError::UnauthorizedAccess // 加了一个地址判断
+    )]
+    pub user_account: Account<'info, UserAccount>,
+
+    #[account(mut)]
+    pub user: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+// 提取用的，充值会用到银行，用户，签名，系统程序
+#[derive(Accounts)]
+pub struct Withdraw<'info> {
+    #[account(mut)]
+    pub bank: Account<'info, Bank>, // 因为已经被初始化了，所以直接引用即可
+
+    #[account(
+        mut,
+        seeds=[b"bank_account",user.key().as_ref()],
+        bump,
+        constraint=user_account.owner==user.key()@BankError::UnauthorizedAccess // 加了一个地址判断
+    )]
+    pub user_account: Account<'info, UserAccount>,
+
+    #[account(mut)]
+    pub user: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+// 查询余额用的,不需要和系统程序交互
+#[derive(Accounts)]
+pub struct GetBalance<'info> {
+    pub bank: Account<'info, Bank>, // 因为已经被初始化了，所以直接引用即可
+
+    #[account(
+        seeds=[b"bank_account",user.key().as_ref()],
+        bump,
+        constraint=user_account.owner==user.key()@BankError::UnauthorizedAccess // 加了一个地址判断
+    )]
+    pub user_account: Account<'info, UserAccount>,
+    pub user: Signer<'info>, // ✅ 改成 AccountInfo
+}
+
+#[error_code]
+pub enum BankError {
+    #[msg("金额必须大于零")]
+    ZeroAmount,
+
+    #[msg("提款余额不足")]
+    InsufficientBalance,
+
+    #[msg("算术溢出")]
+    Overflow,
+
+    #[msg("算术下溢")]
+    Underflow,
+
+    #[msg("银行帐户资金不足")]
+    InsufficientFunds,
+
+    #[msg("未经授权访问用户账户")]
+    UnauthorizedAccess,
+}
+
+/// Raydium CPMM swap 所需的全部账户
+/// 所有 vault/pool 账户地址都可以从 Raydium SDK 的 poolKeys 里读到
+/// 使用 UncheckedAccount + /// CHECK: 注释，验证交由 Raydium 程序本身完成
+#[derive(Accounts)]
+pub struct ProxySwapBaseInput<'info> {
+    pub cp_swap_program: Program<'info, RaydiumCpmm>,
+    /// 发起 swap 的用户，支付手续费
+    #[account(mut)]
+    pub payer: Signer<'info>,
+
+    /// CHECK: 池子金库和 LP mint 的授权 PDA
+    #[account(
+        seeds = [
+        raydium_cpmm_cpi::AUTH_SEED.as_bytes(),
+        ],
+        seeds::program = cp_swap_program.key(),
+        bump,
+    )]
+    pub authority: UncheckedAccount<'info>,
+    /// 读取协议手续费配置的工厂状态账户
+    #[account(address = pool_state.load()?.amm_config)]
+    pub amm_config: Box<Account<'info, AmmConfig>>,
+
+    /// 执行 swap 的池子程序账户
+    #[account(mut)]
+    pub pool_state: AccountLoader<'info, PoolState>,
+
+    /// 用户的 input token 账户（付款方）
+    #[account(mut)]
+    pub input_token_account: Box<InterfaceAccount<'info, TokenAccount>>,
+
+    /// 用户的 output token 账户（收款方）
+    #[account(mut)]
+    pub output_token_account: Box<InterfaceAccount<'info, TokenAccount>>,
+
+    /// 池子的 input token 金库账户
+    #[account(
+        mut,
+        constraint = input_vault.key() == pool_state.load()?.token_0_vault || input_vault.key() == pool_state.load()?.token_1_vault
+    )]
+    pub input_vault: Box<InterfaceAccount<'info, TokenAccount>>,
+
+    /// 池子的 output token 金库账户
+    #[account(
+        mut,
+        constraint = output_vault.key() == pool_state.load()?.token_0_vault || output_vault.key() == pool_state.load()?.token_1_vault
+    )]
+    pub output_vault: Box<InterfaceAccount<'info, TokenAccount>>,
+
+    /// input token 的 SPL Token 程序（支持 Token 或 Token-2022）
+    pub input_token_program: Interface<'info, TokenInterface>,
+
+    /// output token 的 SPL Token 程序（支持 Token 或 Token-2022）
+    pub output_token_program: Interface<'info, TokenInterface>,
+
+    /// input token 的 mint 账户
+    #[account(
+        address = input_vault.mint
+    )]
+    pub input_token_mint: Box<InterfaceAccount<'info, Mint>>,
+
+    /// output token 的 mint 账户
+    #[account(
+        address = output_vault.mint
+    )]
+    pub output_token_mint: Box<InterfaceAccount<'info, Mint>>,
+    /// 最新价格预言机观测数据账户（用于 TWAP）
+    #[account(mut, address = pool_state.load()?.observation_key)]
+    pub observation_state: AccountLoader<'info, ObservationState>,
+}
+
+/*
 #[derive(Accounts)]
 pub struct Initialize<'info> {
     // 管理员
@@ -192,12 +543,18 @@ pub struct Initialize<'info> {
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
 }
+ */
+
+/*
 
 #[account]
 #[derive(InitSpace)]
 pub struct AdminConfig {
     pub admin: Pubkey,
 }
+ */
+
+/*
 
 #[derive(Accounts)]
 pub struct MintTokens<'info> {
@@ -232,6 +589,9 @@ pub struct MintTokens<'info> {
     pub system_program: Program<'info, System>,
 }
 
+ */
+
+/*
 
 #[derive(Accounts)]
 pub struct WithdrawFunds<'info>{
@@ -254,6 +614,9 @@ pub struct WithdrawFunds<'info>{
     pub system_program: Program<'info, System>,
 
 }
+ */
+
+/*
 
 #[error_code]
 pub enum Errors {
@@ -268,6 +631,8 @@ pub enum Errors {
     #[msg("treasury 中没有足够的 SOL")]
     InsufficientFunds,
 }
+ */
+
 /*
 #[derive(Accounts)]
 pub struct CreateMint<'info> {

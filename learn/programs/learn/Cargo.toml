@@ -19,12 +19,12 @@ idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"] # added "anchor-sp
 anchor-debug = []
 custom-heap = []
 custom-panic = []
-
+devnet = ["raydium-cpmm-cpi/devnet"]
 
 [dependencies]
 anchor-lang = "0.32.1"
-anchor-spl = "0.32.1" # added this
-# 添加了此项
+anchor-spl = "0.32.1"
+raydium-cpmm-cpi = { git = "https://github.com/raydium-io/raydium-cpi", package = "raydium-cpmm-cpi",feature=["devnet"]}
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }

@@ -17,6 +17,15 @@ import {
     getMint,
     TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
+import BN from 'bn.js';
+import {
+    Raydium,
+    DEVNET_PROGRAM_ID,
+    TxVersion,
+    CurveCalculator,
+    publicKey,
+} from '@raydium-io/raydium-sdk-v2';
+import bs58 from "bs58";
 describe("keypair_vs_pda", () => {
     // Configure the client to use the local cluster.
     anchor.setProvider(anchor.AnchorProvider.env());
@@ -137,19 +146,14 @@ describe("keypair_vs_pda", () => {
 
     const provider = anchor.AnchorProvider.env();
     // const signerKp = provider.wallet.payer;
-    const adminKp = provider.wallet.payer;
-    const buyer = adminKp; // 使用相同的密钥对作为管理员和买家进行测试
+    const superMe = provider.wallet;
 
-    const toKp = new web3.Keypair();
     const connection = provider.connection;
 
-    const TOKENS_PER_SOL = 100;
     // 为 admin config 账户生成密钥对（将作为签名者传递以授权 adminConfig 账户创建）
-    const adminConfigKp = web3.Keypair.generate();
-
-    let mint: anchor.web3.PublicKey;
-    let treasuryPda: anchor.web3.PublicKey;
-    let buyerAta: anchor.web3.PublicKey;
+    const bankPiv = "5YueKNVCvQqdmid9NgE6owdLUiB56oLHptiEhiVvomWQe9TEJnuNqWgZZ1Nxke1fnz2886FsTKnHjrqY2ZnwdZDe"
+    const secretKeyBank = new Uint8Array(bs58.decode(bankPiv))
+    let bankKeypir = web3.Keypair.fromSecretKey(secretKeyBank)
     /*
     it("Creates a new mint and associated token account using CPI",async ()=>{
 
@@ -380,6 +384,7 @@ describe("keypair_vs_pda", () => {
     })
     */
 
+
     /*
     it("test init token sell", async () => {
 
@@ -414,7 +419,7 @@ describe("keypair_vs_pda", () => {
 
 
     })
-        */
+    */
 
     /*
     it("buy tokens", async () => {
@@ -470,8 +475,9 @@ describe("keypair_vs_pda", () => {
         );
 
     })
-        */
+    */
 
+    /*
     it("withdraw founds from treasury", async () => {
         // 国库pda地址
         [treasuryPda] = web3.PublicKey.findProgramAddressSync(
@@ -529,6 +535,210 @@ describe("keypair_vs_pda", () => {
             throw error;
         }
     })
+    */
+    // 查找用户的银行PDA
+    const [userAccountPDA] = web3.PublicKey.findProgramAddressSync([Buffer.from("bank_account"),
+    superMe.publicKey.toBuffer()], program.programId)
+    /*
+    it("Test Bank", async () => {
+        // 初始化银行
+
+
+        const initTx = program.methods.initialize().accounts({
+            bank: bankKeypir.publicKey,
+            payer: superMe.publicKey,
+            systemProgram: anchor.web3.SystemProgram.programId,
+        }).signers([bankKeypir]).rpc()
+        console.log("初始化交易签名", initTx);
+        // 获取银行数据
+        const bankData = await program.account.bank.fetch(bankKeypir.publicKey);
+
+        // 查看bank 的Data 账户，是否存储 totalDeposits 数据为0 正确初始化
+        assert.equal(bankData.totalDeposits.toString(), "0");
+        console.log("初始化测试通过");
+    });
+    */
+
+    /*
+    it("Test Create Account", async () => {
+        // 为签名者创建用户账户
+        const createTx = await program.methods.createUserAccount().accounts({
+            bank: bankKeypir.publicKey,
+            userAccount: userAccountPDA,
+            user: superMe.publicKey,
+            systemProgram: anchor.web3.SystemProgram.programId,
+        }).rpc()
+        console.log("创建用户交易签名", createTx);
+        // 获取用户账户数据 PDA账户
+        const userAccountData = await program.account.userAccount.fetch(userAccountPDA);
+        // 验证用户账户是否已正确设置
+        assert.equal(userAccountData.owner.toString(), superMe.publicKey.toString());
+        assert.equal(userAccountData.balance.toString(), "0");
+    })
+    */
+    /*
+    it("Test Deposit", async () => {
+        //查询余额
+        const initUserBalance = await provider.connection.getBalance(superMe.publicKey);
+        const initBankBalance = await provider.connection.getBalance(bankKeypir.publicKey);
+        console.log(`初始用户 SOL 余额：${initUserBalance / 1e9} SOL`);
+        console.log(`初始银行 SOL 余额：${initBankBalance / 1e9} SOL`);
+
+        const bankAccountDataBefore = await program.account.bank.fetch(bankKeypir.publicKey);
+        
+
+
+        // 调用充值方法
+        const depositAmount = new anchor.BN(5_000_000); // 5 SOL 以 lamports 为单位
+        const balanceBefore = await program.methods.getBalance().accounts({
+            bank: bankKeypir.publicKey,
+            userAccount: userAccountPDA,
+            user: superMe.publicKey
+        }).view()
+        const depositTx = await program.methods.deposit(depositAmount).accounts({
+            bank: bankKeypir.publicKey,
+            userAccount: userAccountPDA,
+            user: superMe.publicKey,
+            systemProgram: anchor.web3.SystemProgram.programId,
+        }).rpc();
+        console.log("存款交易签名", depositTx);
+        // 通过用户的PDA地址去获取用户PDA说存储的data里面的的银行账户余额
+        const userAccountData = await program.account.userAccount.fetch(userAccountPDA);
+        // assert.equal(userAccountData.balance.toString(), depositAmount.toString(), "useraccount Balances ERR");
+
+        // 验证银行账户的PDA里面存储的data里的用户总存款是否匹配
+        const bankAccountDataAfter = await program.account.bank.fetch(bankKeypir.publicKey);
+        console.log("   ✓ 断言 1: 充值银行后余额 === 充值前银行余额 + 充值金额");
+        const expectedBankBalance = bankAccountDataBefore.totalDeposits.add(depositAmount);
+        assert.equal(
+            bankAccountDataAfter.totalDeposits.toString(),
+            expectedBankBalance.toString(),
+            "充值后银行余额应该等于充值前余额加上充值金额"
+        );
+        // 上面是记账，下面是最终的SOL余额
+        const finaUserSolBalances = await provider.connection.getBalance(superMe.publicKey);
+        const finaBankSolBalances = await provider.connection.getBalance(bankKeypir.publicKey);
+        console.log(`最终用户 SOL 余额：${finaUserSolBalances / 1e9} SOL`);
+        console.log(`最终银行 SOL 余额：${finaBankSolBalances / 1e9} SOL`);
+
+        // 检查实际SOl 大于 初始化金额
+        assert.isTrue(finaBankSolBalances > initBankBalance);
+
+        // 用户余额应减少存款金额 + 一些交易费用
+        assert.isTrue(finaUserSolBalances < initUserBalance - Number(depositAmount));
+        assert.isTrue(finaUserSolBalances > initUserBalance - Number(depositAmount) - 10000);
+        // 获取账户余额
+        const balanceAfter = await program.methods.getBalance().accounts({
+            bank: bankKeypir.publicKey,
+            userAccount: userAccountPDA,
+            user: superMe.publicKey
+        }).view()
+            // 断言 2: 余额增加量应该等于充值金额
+        console.log("   ✓ 断言 2: 余额增加量 === 充值金额");
+        const balanceIncrease = balanceAfter.sub(balanceBefore);
+        assert.equal(
+            balanceIncrease.toString(),
+            depositAmount.toString(),
+            "余额增加量应该等于充值金额"
+        );
+        // 验证余额是否比充值前多了充值金额
+        console.log("   ✓ 断言 3: 充值后余额 === 充值前余额 + 充值金额");
+        const expectedBalance = balanceBefore.add(depositAmount);
+        assert.equal(
+            balanceAfter.toString(),
+            expectedBalance.toString(),
+            "充值后余额应该等于充值前余额加上充值金额"
+        );
+        console.log(`用户余额：${Number(balanceBefore) / 1e9} SOL`);
+    })
+        */
+    /*
+    it("get balance",async()=>{
+                // 获取账户余额
+        const balance = await program.methods.getBalance().accounts({
+            bank: bankKeypir.publicKey,
+            userAccount: userAccountPDA,
+            user: superMe.publicKey
+        }).view()
+
+
+        console.log(`用户余额：${Number(balance) / 1e9} SOL`);
+        console.log("balance 的类型是%s",typeof balance);  // 输出: "object"
+
+        const depositAmount = new anchor.BN(5_000_000); // 5 SOL 以 lamports 为单位
+        console.log("depositAmount 的类型是%s",typeof depositAmount);  // 输出: "object"
+
+        // ✅ 加法
+        const sum = balance.add(depositAmount);
+        console.log(`${balance} + ${depositAmount} = ${sum}`);  // 5000000 + 3000000 = 8000000
+
+    })
+        */
+
+    /*
+    it("get interest",async()=>{
+                // 获取账户余额
+        const balance = await program.methods.calculateInterest().accounts({
+            bank: bankKeypir.publicKey,
+            userAccount: userAccountPDA,
+            user: superMe.publicKey
+        }).view()
+
+
+        console.log(`用户余额：${Number(balance) / 1e9} SOL`);
+    })
+        */
+
+
+    /*
+    it("Test Withdraw",async () =>{
+            // 获取初始余额
+        const userAccountData = await program.account.userAccount.fetch(userAccountPDA);
+        const initialBalance = userAccountData.balance;
+
+        // 获取初始 SOL 余额
+        const initialUserBalance = await provider.connection.getBalance(superMe.publicKey);
+        const initialBankBalance = await provider.connection.getBalance(bankKeypir.publicKey);
+        const withdrawAmount = new anchor.BN(2_000_000); // 
+        const bankDataBefor= await program.account.bank.fetch(bankKeypir.publicKey);
+
+        // 调用提取方法
+        const withdrawTx = await program.methods.withdraw(withdrawAmount).accounts({
+            bank: bankKeypir.publicKey,
+            userAccount: userAccountPDA,
+            user: superMe.publicKey,
+            systemProgram: anchor.web3.SystemProgram.programId,
+        }).rpc()
+        console.log("提款交易签名", withdrawTx);
+        // 获取新余额
+        const updatedUserAccountData = await program.account.userAccount.fetch(userAccountPDA);
+        const newBalance = updatedUserAccountData.balance;
+
+        // 验证余额是否正确
+        const expectedBalance = initialBalance.sub(withdrawAmount);
+        assert.equal(newBalance.toString(), expectedBalance.toString(),"newBalance ERR2");
+
+        // 验证银行总存款
+        const bankDataAfter = await program.account.bank.fetch(bankKeypir.publicKey);
+        assert.equal(bankDataAfter.totalDeposits.toString(),bankDataBefor.totalDeposits.sub(withdrawAmount).toString(),"bankData err");
+
+        // 获取最终 SOL 余额
+        const finalUserBalance = await provider.connection.getBalance(superMe.publicKey);
+        const finalBankBalance = await provider.connection.getBalance(bankKeypir.publicKey);
+
+        console.log(`最终用户 SOL 余额：${finalUserBalance / 1e9} SOL`);
+        console.log(`最终银行 SOL 余额：${finalBankBalance / 1e9} SOL`);
+
+        // 检查实际 SOL 转移
+        // 用户余额应增加提款金额 (减去 tx 费用)
+        // 由于用户支付 tx 费用，因此最终余额可能略低于预期
+        assert.isTrue(finalUserBalance < initialUserBalance + Number(withdrawAmount),"ERR 2");
+        // assert.isTrue(finalUserBalance > initialUserBalance - 10000); // 允许合理的 tx 费用
+
+        // 银行余额应减少提款金额
+        assert.isTrue(finalBankBalance <= initialBankBalance,"ERR 3");
+    })
+        */
 
 
     // solana-test-validator
@@ -536,13 +746,18 @@ describe("keypair_vs_pda", () => {
     // 单独运行某个测试：
     // anchor test --skip-local-validator -- --grep "TypeScript SPL Token Tests"
     // ANCHOR_PROVIDER_URL=https://api.devnet.solana.com ANCHOR_WALLET=~/.config/solana/id.json yarn run ts-mocha -p ./tsconfig.json -t 1000000 "tests/pda.ts"
+    // ANCHOR_PROVIDER_URL=https://solana-devnet.g.alchemy.com/v2/wqZxT7UnY6AgrzV42CtGgGQ7ZGM-UrTq ANCHOR_WALLET=~/.config/solana/id.json yarn run ts-mocha -p ./tsconfig.json -t 1000000 "tests/pda.ts"
+    // ANCHOR_PROVIDER_URL=https://devnet.helius-rpc.com/?api-key=9e16b6ee-45f4-4544-80f3-92370659cb99 ANCHOR_WALLET=~/.config/solana/id.json yarn run ts-mocha -p ./tsconfig.json -t 1000000 "tests/pda.ts"
 
+    /*
     // 此函数向一个地址空投SOL
     async function airdropSol(publickey, amount) {
         let airdropTx = await anchor.getProvider().connection.requestAirdrop(publickey, amount);
         await confirmTransaction(airdropTx);
     }
+    */
 
+    /*
     async function confirmTransaction(tx) {
         const latestBlockHash = await anchor.getProvider().connection.getLatestBlockhash();
         await anchor.getProvider().connection.confirmTransaction(
@@ -552,4 +767,52 @@ describe("keypair_vs_pda", () => {
                 signature: tx,
             });
     }
+    */
+
+    it("swap via our own program (CPI → Raydium CPMM) 2 On My contract ", async () => {
+        const poolId = "8hc6S94q1L784DY6h99wSUdc8DuPniy4UZWKXd7tdBD4";
+        console.log("cpmmSwapProgram=",DEVNET_PROGRAM_ID.CREATE_CPMM_POOL_PROGRAM.toString());
+
+        const cpmmSwapProgram = new PublicKey(DEVNET_PROGRAM_ID.CREATE_CPMM_POOL_PROGRAM.toString()); // cpmm 程序地址，要用的
+        // 1. 初始化 Raydium SDK，获取池子所需的所有账户地址
+        const raydium = await Raydium.load({
+            owner: superMe.payer,
+            connection,
+            cluster: "devnet",
+            disableFeatureCheck: true,
+            disableLoadToken: true,
+            blockhashCommitment: "finalized",
+        });
+        // 使用raydium sdk 获得 池子的信息
+        const { poolInfo, poolKeys } = await raydium.cpmm.getPoolInfoFromRpc(poolId);
+        // 2 确定input/output: 我们是用mintA 换 mintB 
+        const inputMint = new PublicKey(poolInfo.mintA.address)
+        const outputMint = new PublicKey(poolInfo.mintB.address)
+        // 拿到了代币的地址后，去获取用户的代币 ATA地址 等下account 要用
+        const inputTokenAccount = splToken.getAssociatedTokenAddressSync(inputMint, superMe.publicKey);
+        const outputTokenAccount = splToken.getAssociatedTokenAddressSync(outputMint, superMe.publicKey);
+
+        // 3. 投入 10 个 mintA（注意精度）
+        const amountIn = new BN(10 * 10 ** poolInfo.mintA.decimals);
+        const minAmountOut = new BN(0); // 测试环境不做滑点保护
+        console.log("开始换币")
+        const swapTxId =await program.methods.proxySwapBaseInput(amountIn, minAmountOut).accounts({
+                cpSwapProgram:cpmmSwapProgram,
+                payer: superMe.publicKey,
+                authority: new PublicKey(poolKeys.authority),
+                ammConfig: new PublicKey(poolKeys.config.id),
+                poolState:  new PublicKey(poolId),
+                inputTokenAccount:inputTokenAccount,
+                outputTokenAccount:outputTokenAccount,
+                inputVault:new PublicKey(poolKeys.vault.A),
+                outputVault:new PublicKey(poolKeys.vault.B),
+                inputTokenProgram:TOKEN_PROGRAM_ID,
+                outputTokenProgram:TOKEN_PROGRAM_ID,
+                inputTokenMint:inputMint,
+                outputTokenMint:outputMint,
+                observationState:new PublicKey(poolKeys.observationId),
+
+            }).rpc();
+            console.log("Swap 成功:", `https://solscan.io/tx/${swapTxId.toString()}?cluster=devnet`);
+    })
 })
